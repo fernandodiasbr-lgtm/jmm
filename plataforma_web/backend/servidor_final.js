@@ -6,11 +6,15 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
 const app = express();
-const PORT = 8080;
+
+// ========== CONFIGURAÇÃO PARA PRODUÇÃO ==========
+const isProduction = process.env.NODE_ENV === 'production';
+const PORT = process.env.PORT || 8080;
 
 // ========== CONFIGURAÇÃO DO BANCO DE DADOS ==========
-const dbPath = path.join(__dirname, 'dados_multimedidor.db');
+const dbPath = isProduction ? ':memory:' : path.join(__dirname, 'dados_multimedidor.db');
 console.log('📁 Caminho do banco:', dbPath);
+console.log('🌐 Ambiente:', isProduction ? 'PRODUÇÃO' : 'DESENVOLVIMENTO');
 
 // Criar conexão com o banco
 const db = new sqlite3.Database(dbPath, (err) => {
@@ -731,7 +735,7 @@ app.get('/api/health', (req, res) => {
         status: 'healthy',
         server: 'Multimedidor UFRJ',
         port: PORT,
-        database: 'SQLite - Online',
+        database: isProduction ? 'SQLite em memória' : 'SQLite arquivo',
         total_dados_memoria: dados.length,
         timestamp: new Date().toLocaleString('pt-BR')
     });
@@ -2235,10 +2239,10 @@ app.get('/', (req, res) => {
 // ========== INICIAR SERVIDOR ==========
 app.listen(PORT, '0.0.0.0', () => {
     console.log(' ');
-    console.log('✅ SERVIDOR RODANDO NA PORTA ' + PORT);
-    console.log('📍 Local: http://localhost:' + PORT);
-    console.log('🌐 Rede: http://192.168.1.183:' + PORT);
-    console.log('💾 Banco de dados: SQLite ativo');
+    console.log('🚀 SERVIDOR MULTIMEDIDOR UFRJ - DEPLOY PRODUÇÃO');
+    console.log('📍 Porta: ' + PORT);
+    console.log('🌐 Ambiente: ' + (isProduction ? 'PRODUÇÃO' : 'DESENVOLVIMENTO'));
+    console.log('💾 Banco de dados: ' + (isProduction ? 'SQLite em memória' : 'SQLite arquivo'));
     console.log('🎓 Universidade Federal do Rio de Janeiro');
     console.log(' ');
     console.log('📊 Endpoints disponíveis:');
