@@ -78,7 +78,7 @@ app.get('/api/latest', (req, res) => {
 
 app.get('/api/history', (req, res) => {
     const db = loadDatabase();
-    const limit = parseInt(req.query.limit) || 50;
+    const limit = parseInt(req.query.limit) || 100;
     
     const history = db.readings.slice(0, limit).map(reading => ({
         timestamp: reading.timestamp,
@@ -86,13 +86,19 @@ app.get('/api/history', (req, res) => {
         Corrente_Trifasica: reading.Corrente_Trifasica,
         Potencia_Ativa_Trifasica: reading.Potencia_Ativa_Trifasica,
         Frequencia: reading.Frequencia,
-        Demanda_Ativa: reading.Demanda_Ativa
+        Demanda_Ativa: reading.Demanda_Ativa,
+        Tensao_Fase_1: reading.Tensao_Fase_1,
+        Tensao_Fase_2: reading.Tensao_Fase_2,
+        Tensao_Fase_3: reading.Tensao_Fase_3,
+        THD_Tensao_Fase_1: reading.THD_Tensao_Fase_1,
+        THD_Tensao_Fase_2: reading.THD_Tensao_Fase_2,
+        THD_Tensao_Fase_3: reading.THD_Tensao_Fase_3
     }));
     
     res.json(history);
 });
 
-// DASHBOARD COMPLETO COM FASES E THD
+// DASHBOARD UFRJ PREMIUM - VERSÃO DEFINITIVA
 app.get('/', (req, res) => {
     const html = `
     <!DOCTYPE html>
@@ -100,433 +106,769 @@ app.get('/', (req, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Multimedidor UFRJ - Dashboard Completo v2.0</title>
+        <title>Multimedidor UFRJ - Dashboard Premium</title>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
         <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
+            :root {
+                --primary: #2c3e50;
+                --secondary: #3498db;
+                --success: #27ae60;
+                --warning: #f39c12;
+                --danger: #e74c3c;
+                --info: #17a2b8;
+                --light: #ecf0f1;
+                --dark: #34495e;
+                --ufrj-blue: #0047a0;
+                --ufrj-gold: #ffd700;
+            }
+            
+            * { 
+                margin: 0; 
+                padding: 0; 
+                box-sizing: border-box; 
+            }
+            
             body { 
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                background: linear-gradient(135deg, var(--ufrj-blue) 0%, #00264d 100%);
                 min-height: 100vh;
-                padding: 20px;
                 color: #333;
+                overflow-x: hidden;
             }
-            .container { max-width: 1400px; margin: 0 auto; }
             
-            .header { 
-                background: rgba(255, 255, 255, 0.95);
+            .container { 
+                max-width: 1400px; 
+                margin: 0 auto; 
+                padding: 20px;
+            }
+            
+            /* HEADER UFRJ */
+            .header-ufrj {
+                background: linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.98) 100%);
                 padding: 30px; 
                 border-radius: 20px; 
-                margin-bottom: 20px; 
+                margin-bottom: 25px; 
                 text-align: center;
-                box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-                border: 3px solid #2c3e50;
+                box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+                border: 3px solid var(--ufrj-gold);
+                position: relative;
+                overflow: hidden;
             }
-            .header h1 { 
-                color: #2c3e50; 
-                font-size: 2.8em; 
+            
+            .header-ufrj::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                height: 5px;
+                background: linear-gradient(90deg, var(--ufrj-blue), var(--ufrj-gold), var(--ufrj-blue));
+            }
+            
+            .logo-ufrj {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 20px;
+                margin-bottom: 15px;
+            }
+            
+            .logo-ufrj h1 {
+                color: var(--ufrj-blue);
+                font-size: 3em;
+                font-weight: 800;
+                text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+            }
+            
+            .logo-badge {
+                background: var(--ufrj-gold);
+                color: var(--ufrj-blue);
+                padding: 10px 20px;
+                border-radius: 25px;
+                font-weight: bold;
+                font-size: 1.1em;
+                box-shadow: 0 4px 15px rgba(255,215,0,0.3);
+            }
+            
+            .header-subtitle {
+                color: var(--dark);
+                font-size: 1.4em;
                 margin-bottom: 10px;
+                font-weight: 300;
             }
-            .header h2 {
-                color: #e74c3c;
-                font-size: 1.8em;
-                margin-bottom: 10px;
-            }
-            .version {
-                background: #3498db;
+            
+            .version-badge {
+                background: linear-gradient(45deg, var(--success), var(--secondary));
                 color: white;
-                padding: 5px 15px;
+                padding: 8px 20px;
                 border-radius: 20px;
                 font-size: 0.9em;
+                font-weight: 600;
                 display: inline-block;
                 margin-top: 10px;
+                box-shadow: 0 4px 15px rgba(39, 174, 96, 0.3);
             }
             
+            /* STATUS BAR */
             .status-bar {
-                display: flex;
-                justify-content: space-around;
-                align-items: center;
-                background: rgba(255, 255, 255, 0.9);
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                gap: 15px;
+                margin-bottom: 25px;
+            }
+            
+            .status-card {
+                background: rgba(255, 255, 255, 0.95);
                 padding: 20px;
                 border-radius: 15px;
-                margin-bottom: 20px;
-                box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-                flex-wrap: wrap;
-                gap: 15px;
-            }
-            .status-item {
                 text-align: center;
-                flex: 1;
-                min-width: 120px;
-            }
-            .status-value {
-                font-size: 1.8em;
-                font-weight: bold;
-                color: #2c3e50;
-            }
-            .status-label {
-                font-size: 0.9em;
-                color: #7f8c8d;
-                margin-top: 5px;
+                box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+                border-left: 4px solid var(--secondary);
+                transition: all 0.3s ease;
             }
             
+            .status-card:hover {
+                transform: translateY(-5px);
+                box-shadow: 0 12px 30px rgba(0,0,0,0.15);
+            }
+            
+            .status-value {
+                font-size: 2em;
+                font-weight: 800;
+                color: var(--primary);
+                margin-bottom: 5px;
+            }
+            
+            .status-label {
+                color: var(--dark);
+                font-size: 0.9em;
+                font-weight: 500;
+            }
+            
+            /* CONTROLS */
             .controls {
                 display: flex;
                 justify-content: center;
                 gap: 15px;
-                margin: 25px 0;
+                margin: 30px 0;
                 flex-wrap: wrap;
             }
+            
             .btn {
-                padding: 12px 25px;
+                padding: 15px 30px;
                 border: none;
-                border-radius: 8px;
+                border-radius: 12px;
                 font-size: 1em;
-                font-weight: bold;
+                font-weight: 600;
                 cursor: pointer;
                 transition: all 0.3s ease;
-            }
-            .btn-primary {
-                background: #3498db;
-                color: white;
-            }
-            .btn-success {
-                background: #27ae60;
-                color: white;
-            }
-            .btn:hover {
-                transform: translateY(-2px);
+                display: flex;
+                align-items: center;
+                gap: 10px;
                 box-shadow: 0 5px 15px rgba(0,0,0,0.2);
             }
             
-            .grid-principal { 
+            .btn-primary {
+                background: linear-gradient(45deg, var(--secondary), #2980b9);
+                color: white;
+            }
+            
+            .btn-success {
+                background: linear-gradient(45deg, var(--success), #229954);
+                color: white;
+            }
+            
+            .btn-warning {
+                background: linear-gradient(45deg, var(--warning), #e67e22);
+                color: white;
+            }
+            
+            .btn:hover {
+                transform: translateY(-3px);
+                box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+            }
+            
+            /* MAIN GRID */
+            .grid-main { 
                 display: grid; 
-                grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); 
-                gap: 20px; 
+                grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); 
+                gap: 25px; 
                 margin-bottom: 30px;
             }
             
-            .grid-fases {
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-                gap: 20px;
-                margin-bottom: 30px;
-            }
-            
-            .card {
-                background: rgba(255, 255, 255, 0.95);
+            .metric-card {
+                background: linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.98) 100%);
                 padding: 25px;
-                border-radius: 15px;
-                box-shadow: 0 8px 25px rgba(0,0,0,0.1);
-                border-left: 5px solid #3498db;
+                border-radius: 20px;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+                border-left: 5px solid;
+                transition: all 0.4s ease;
+                position: relative;
+                overflow: hidden;
             }
-            .card-tensao { border-left-color: #e74c3c; }
-            .card-corrente { border-left-color: #2ecc71; }
-            .card-potencia { border-left-color: #f39c12; }
-            .card-frequencia { border-left-color: #9b59b6; }
+            
+            .metric-card::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                height: 3px;
+                background: inherit;
+                opacity: 0.3;
+            }
+            
+            .metric-card:hover {
+                transform: translateY(-8px) scale(1.02);
+                box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+            }
+            
+            .card-tensao { border-left-color: var(--danger); }
+            .card-corrente { border-left-color: var(--success); }
+            .card-potencia { border-left-color: var(--warning); }
+            .card-frequencia { border-left-color: var(--info); }
+            .card-demanda { border-left-color: #9b59b6; }
             .card-thd { border-left-color: #e67e22; }
             
-            .card h3 {
-                color: #2c3e50;
+            .metric-card h3 {
+                color: var(--primary);
                 margin-bottom: 15px;
                 font-size: 1.3em;
-                border-bottom: 2px solid #ecf0f1;
-                padding-bottom: 10px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                font-weight: 600;
             }
             
-            .valor {
-                font-size: 2.5em;
-                font-weight: bold;
-                color: #2c3e50;
+            .metric-value {
+                font-size: 2.8em;
+                font-weight: 800;
+                color: var(--primary);
                 margin: 15px 0;
+                text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
             }
             
-            .unidade {
+            .metric-unit {
                 font-size: 1.1em;
-                color: #7f8c8d;
+                color: var(--dark);
                 margin-left: 8px;
+                font-weight: 500;
             }
             
-            .fase-card {
-                background: rgba(255, 255, 255, 0.95);
-                padding: 25px;
-                border-radius: 12px;
-                box-shadow: 0 8px 25px rgba(0,0,0,0.1);
-                border-left: 5px solid #3498db;
+            .metric-trend {
+                font-size: 0.9em;
+                padding: 4px 12px;
+                border-radius: 15px;
+                font-weight: 600;
+                display: inline-block;
+                margin-top: 10px;
             }
-            .fase-1 { border-left-color: #e74c3c; }
-            .fase-2 { border-left-color: #2ecc71; }
-            .fase-3 { border-left-color: #f39c12; }
             
-            .fase-titulo {
-                font-size: 1.5em;
-                font-weight: bold;
-                color: #2c3e50;
-                margin-bottom: 20px;
+            .trend-up { background: rgba(231, 76, 60, 0.1); color: var(--danger); }
+            .trend-down { background: rgba(39, 174, 96, 0.1); color: var(--success); }
+            .trend-stable { background: rgba(52, 152, 219, 0.1); color: var(--secondary); }
+            
+            /* PHASE ANALYSIS */
+            .section-title {
+                color: white;
+                font-size: 2.2em;
                 text-align: center;
-                padding: 10px;
-                border-radius: 8px;
+                margin: 40px 0 30px 0;
+                font-weight: 700;
+                text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
             }
-            .fase-1 .fase-titulo { background: rgba(231, 76, 60, 0.1); }
-            .fase-2 .fase-titulo { background: rgba(46, 204, 113, 0.1); }
-            .fase-3 .fase-titulo { background: rgba(243, 156, 18, 0.1); }
             
-            .parametro {
+            .section-subtitle {
+                color: var(--light);
+                text-align: center;
+                margin-bottom: 30px;
+                font-size: 1.2em;
+                font-weight: 300;
+            }
+            
+            .grid-phases {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+                gap: 25px;
+                margin-bottom: 40px;
+            }
+            
+            .phase-card {
+                background: linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.98) 100%);
+                padding: 30px;
+                border-radius: 20px;
+                box-shadow: 0 12px 35px rgba(0,0,0,0.1);
+                transition: all 0.4s ease;
+                border-top: 4px solid;
+                position: relative;
+                overflow: hidden;
+            }
+            
+            .phase-card::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                height: 100%;
+                background: linear-gradient(135deg, transparent 0%, rgba(255,255,255,0.1) 100%);
+                pointer-events: none;
+            }
+            
+            .phase-card:hover {
+                transform: translateY(-8px);
+                box-shadow: 0 20px 45px rgba(0,0,0,0.15);
+            }
+            
+            .phase-1 { border-top-color: var(--danger); }
+            .phase-2 { border-top-color: var(--success); }
+            .phase-3 { border-top-color: var(--warning); }
+            
+            .phase-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                margin-bottom: 25px;
+                padding-bottom: 15px;
+                border-bottom: 2px solid var(--light);
+            }
+            
+            .phase-title {
+                font-size: 1.6em;
+                font-weight: 700;
+                color: var(--primary);
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            
+            .phase-badge {
+                padding: 6px 15px;
+                border-radius: 20px;
+                font-size: 0.8em;
+                font-weight: 600;
+                color: white;
+            }
+            
+            .badge-1 { background: var(--danger); }
+            .badge-2 { background: var(--success); }
+            .badge-3 { background: var(--warning); }
+            
+            .phase-params {
+                display: grid;
+                gap: 12px;
+            }
+            
+            .param-row {
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
                 padding: 12px 0;
-                border-bottom: 1px solid #ecf0f1;
+                border-bottom: 1px solid rgba(0,0,0,0.1);
             }
-            .parametro:last-child {
+            
+            .param-row:last-child {
                 border-bottom: none;
             }
-            .param-nome {
-                color: #7f8c8d;
+            
+            .param-name {
+                color: var(--dark);
                 font-size: 1em;
+                font-weight: 500;
+                display: flex;
+                align-items: center;
+                gap: 8px;
             }
-            .param-valor {
-                font-weight: bold;
-                color: #2c3e50;
+            
+            .param-value {
+                font-weight: 700;
+                color: var(--primary);
                 font-size: 1.1em;
             }
             
-            .atualizacao {
-                text-align: center;
-                color: #7f8c8d;
-                margin-top: 30px;
-                font-size: 0.9em;
-                background: rgba(255, 255, 255, 0.8);
-                padding: 15px;
-                border-radius: 10px;
+            /* CHARTS SECTION */
+            .charts-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+                gap: 25px;
+                margin-bottom: 40px;
             }
             
+            .chart-container {
+                background: rgba(255, 255, 255, 0.95);
+                padding: 25px;
+                border-radius: 20px;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            }
+            
+            .chart-title {
+                text-align: center;
+                color: var(--primary);
+                margin-bottom: 20px;
+                font-size: 1.4em;
+                font-weight: 600;
+            }
+            
+            /* FOOTER */
+            .footer {
+                text-align: center;
+                color: var(--light);
+                margin-top: 50px;
+                padding: 25px;
+                background: rgba(0,0,0,0.2);
+                border-radius: 15px;
+                font-size: 0.9em;
+            }
+            
+            .update-time {
+                background: rgba(255,255,255,0.1);
+                padding: 15px;
+                border-radius: 10px;
+                margin-top: 20px;
+                color: var(--light);
+                font-size: 0.9em;
+            }
+            
+            /* RESPONSIVE */
             @media (max-width: 768px) {
-                .grid-principal, .grid-fases {
+                .grid-main, .grid-phases, .charts-grid {
                     grid-template-columns: 1fr;
                 }
-                .status-bar {
-                    flex-direction: column;
-                }
-                .header h1 {
+                
+                .logo-ufrj h1 {
                     font-size: 2em;
                 }
+                
+                .metric-value {
+                    font-size: 2.2em;
+                }
+                
+                .controls {
+                    flex-direction: column;
+                    align-items: center;
+                }
+                
+                .btn {
+                    width: 100%;
+                    justify-content: center;
+                }
+            }
+            
+            /* ANIMATIONS */
+            @keyframes pulse {
+                0% { transform: scale(1); }
+                50% { transform: scale(1.05); }
+                100% { transform: scale(1); }
+            }
+            
+            .pulse {
+                animation: pulse 2s infinite;
+            }
+            
+            .fade-in {
+                animation: fadeIn 0.8s ease-in;
+            }
+            
+            @keyframes fadeIn {
+                from { opacity: 0; transform: translateY(20px); }
+                to { opacity: 1; transform: translateY(0); }
             }
         </style>
     </head>
     <body>
         <div class="container">
-            <div class="header">
-                <h1>🏛️ MULTIMEDIDOR UFRJ</h1>
-                <h2>DASHBOARD COMPLETO - FASES E THD</h2>
-                <p>Sistema de Monitoramento de Energia em Tempo Real</p>
-                <div class="version">Versão 2.0 - Análise Detalhada por Fase</div>
+            <!-- HEADER UFRJ -->
+            <div class="header-ufrj fade-in">
+                <div class="logo-ufrj">
+                    <h1>🏛️ MULTIMEDIDOR UFRJ</h1>
+                    <div class="logo-badge">SISTEMA OFICIAL</div>
+                </div>
+                <div class="header-subtitle">
+                    Sistema Inteligente de Monitoramento de Energia Elétrica
+                </div>
+                <div class="version-badge">
+                    🚀 VERSÃO PREMIUM - ANÁLISE COMPLETA POR FASES
+                </div>
             </div>
             
-            <div class="status-bar">
-                <div class="status-item">
+            <!-- STATUS BAR -->
+            <div class="status-bar fade-in">
+                <div class="status-card">
                     <div class="status-value" id="totalLeituras">0</div>
                     <div class="status-label">Total de Leituras</div>
                 </div>
-                <div class="status-item">
+                <div class="status-card">
                     <div class="status-value" id="ultimaAtualizacao">--:--:--</div>
                     <div class="status-label">Última Atualização</div>
                 </div>
-                <div class="status-item">
+                <div class="status-card">
                     <div class="status-value" id="statusDispositivo">🟢 Online</div>
-                    <div class="status-label">Status do Dispositivo</div>
+                    <div class="status-label">Status do Sistema</div>
+                </div>
+                <div class="status-card">
+                    <div class="status-value" id="tempoOperacao">00:00:00</div>
+                    <div class="status-label">Tempo de Operação</div>
                 </div>
             </div>
             
-            <div class="controls">
+            <!-- CONTROLS -->
+            <div class="controls fade-in">
                 <button class="btn btn-primary" onclick="atualizarDados()">
-                    🔄 Atualizar Dados
+                    🔄 Atualizar Dados em Tempo Real
                 </button>
                 <button class="btn btn-success" onclick="exportarDados()">
-                    📊 Exportar CSV
+                    📊 Exportar Relatório Completo
+                </button>
+                <button class="btn btn-warning" onclick="capturarDashboard()">
+                    📷 Capturar Dashboard
                 </button>
             </div>
             
-            <!-- CARDS PRINCIPAIS -->
-            <div class="grid-principal">
-                <div class="card card-tensao">
+            <!-- METRICAS PRINCIPAIS -->
+            <div class="grid-main">
+                <div class="metric-card card-tensao fade-in">
                     <h3>⚡ Tensão Trifásica</h3>
-                    <div class="valor" id="tensaoTrifasica">--</div>
-                    <div class="unidade">V</div>
+                    <div class="metric-value" id="tensaoTrifasica">--</div>
+                    <div class="metric-unit">Volts</div>
+                    <div class="metric-trend trend-stable" id="tensaoTrend">● Estável</div>
                 </div>
                 
-                <div class="card card-corrente">
+                <div class="metric-card card-corrente fade-in">
                     <h3>🔌 Corrente Trifásica</h3>
-                    <div class="valor" id="correnteTrifasica">--</div>
-                    <div class="unidade">A</div>
+                    <div class="metric-value" id="correnteTrifasica">--</div>
+                    <div class="metric-unit">Amperes</div>
+                    <div class="metric-trend trend-stable" id="correnteTrend">● Estável</div>
                 </div>
                 
-                <div class="card card-potencia">
+                <div class="metric-card card-potencia fade-in">
                     <h3>💡 Potência Ativa</h3>
-                    <div class="valor" id="potenciaAtiva">--</div>
-                    <div class="unidade">W</div>
+                    <div class="metric-value" id="potenciaAtiva">--</div>
+                    <div class="metric-unit">Watts</div>
+                    <div class="metric-trend trend-stable" id="potenciaTrend">● Estável</div>
                 </div>
                 
-                <div class="card card-frequencia">
+                <div class="metric-card card-frequencia fade-in">
                     <h3>📊 Frequência</h3>
-                    <div class="valor" id="frequencia">--</div>
-                    <div class="unidade">Hz</div>
+                    <div class="metric-value" id="frequencia">--</div>
+                    <div class="metric-unit">Hertz</div>
+                    <div class="metric-trend trend-stable" id="frequenciaTrend">● Estável</div>
                 </div>
                 
-                <div class="card card-thd">
+                <div class="metric-card card-demanda fade-in">
+                    <h3>📈 Demanda Ativa</h3>
+                    <div class="metric-value" id="demandaAtiva">--</div>
+                    <div class="metric-unit">Watts</div>
+                    <div class="metric-trend trend-stable" id="demandaTrend">● Estável</div>
+                </div>
+                
+                <div class="metric-card card-thd fade-in">
                     <h3>🎯 THD Tensão F1</h3>
-                    <div class="valor" id="thdTensaoF1">--</div>
-                    <div class="unidade">%</div>
+                    <div class="metric-value" id="thdTensaoF1">--</div>
+                    <div class="metric-unit">Percentual</div>
+                    <div class="metric-trend trend-stable" id="thdTrend">● Estável</div>
                 </div>
             </div>
             
-            <!-- FASES DETALHADAS -->
-            <div class="header">
-                <h2>🔍 ANÁLISE DETALHADA POR FASE</h2>
+            <!-- ANÁLISE DETALHADA POR FASES -->
+            <h2 class="section-title fade-in">🔍 ANÁLISE DETALHADA POR FASES</h2>
+            <div class="section-subtitle fade-in">
+                Monitoramento individual de cada fase com parâmetros completos de qualidade de energia
             </div>
             
-            <div class="grid-fases">
+            <div class="grid-phases">
                 <!-- FASE 1 -->
-                <div class="fase-card fase-1">
-                    <div class="fase-titulo">🔴 FASE 1</div>
-                    
-                    <div class="parametro">
-                        <span class="param-nome">Tensão:</span>
-                        <span class="param-valor" id="tensaoF1">-- V</span>
+                <div class="phase-card phase-1 fade-in">
+                    <div class="phase-header">
+                        <div class="phase-title">
+                            🔴 Fase 1
+                        </div>
+                        <div class="phase-badge badge-1">PRIMÁRIA</div>
                     </div>
-                    
-                    <div class="parametro">
-                        <span class="param-nome">Corrente:</span>
-                        <span class="param-valor" id="correnteF1">-- A</span>
-                    </div>
-                    
-                    <div class="parametro">
-                        <span class="param-nome">Potência Ativa:</span>
-                        <span class="param-valor" id="potenciaF1">-- W</span>
-                    </div>
-                    
-                    <div class="parametro">
-                        <span class="param-nome">Potência Reativa:</span>
-                        <span class="param-valor" id="reativaF1">-- Var</span>
-                    </div>
-                    
-                    <div class="parametro">
-                        <span class="param-nome">Fator de Potência:</span>
-                        <span class="param-valor" id="fpF1">--</span>
-                    </div>
-                    
-                    <div class="parametro">
-                        <span class="param-nome">THD Tensão:</span>
-                        <span class="param-valor" id="thdF1">-- %</span>
-                    </div>
-                    
-                    <div class="parametro">
-                        <span class="param-nome">THD Corrente:</span>
-                        <span class="param-valor" id="thdCorrenteF1">-- %</span>
+                    <div class="phase-params">
+                        <div class="param-row">
+                            <span class="param-name">📊 Tensão</span>
+                            <span class="param-value" id="tensaoF1">-- V</span>
+                        </div>
+                        <div class="param-row">
+                            <span class="param-name">⚡ Corrente</span>
+                            <span class="param-value" id="correnteF1">-- A</span>
+                        </div>
+                        <div class="param-row">
+                            <span class="param-name">💡 Potência Ativa</span>
+                            <span class="param-value" id="potenciaF1">-- W</span>
+                        </div>
+                        <div class="param-row">
+                            <span class="param-name">🔄 Potência Reativa</span>
+                            <span class="param-value" id="reativaF1">-- Var</span>
+                        </div>
+                        <div class="param-row">
+                            <span class="param-name">📈 Potência Aparente</span>
+                            <span class="param-value" id="aparenteF1">-- VA</span>
+                        </div>
+                        <div class="param-row">
+                            <span class="param-name">🎯 Fator de Potência</span>
+                            <span class="param-value" id="fpF1">--</span>
+                        </div>
+                        <div class="param-row">
+                            <span class="param-name">⚠️ THD Tensão</span>
+                            <span class="param-value" id="thdF1">-- %</span>
+                        </div>
+                        <div class="param-row">
+                            <span class="param-name">⚡ THD Corrente</span>
+                            <span class="param-value" id="thdCorrenteF1">-- %</span>
+                        </div>
                     </div>
                 </div>
                 
                 <!-- FASE 2 -->
-                <div class="fase-card fase-2">
-                    <div class="fase-titulo">🟢 FASE 2</div>
-                    
-                    <div class="parametro">
-                        <span class="param-nome">Tensão:</span>
-                        <span class="param-valor" id="tensaoF2">-- V</span>
+                <div class="phase-card phase-2 fade-in">
+                    <div class="phase-header">
+                        <div class="phase-title">
+                            🟢 Fase 2
+                        </div>
+                        <div class="phase-badge badge-2">SECUNDÁRIA</div>
                     </div>
-                    
-                    <div class="parametro">
-                        <span class="param-nome">Corrente:</span>
-                        <span class="param-valor" id="correnteF2">-- A</span>
-                    </div>
-                    
-                    <div class="parametro">
-                        <span class="param-nome">Potência Ativa:</span>
-                        <span class="param-valor" id="potenciaF2">-- W</span>
-                    </div>
-                    
-                    <div class="parametro">
-                        <span class="param-nome">Potência Reativa:</span>
-                        <span class="param-valor" id="reativaF2">-- Var</span>
-                    </div>
-                    
-                    <div class="parametro">
-                        <span class="param-nome">Fator de Potência:</span>
-                        <span class="param-valor" id="fpF2">--</span>
-                    </div>
-                    
-                    <div class="parametro">
-                        <span class="param-nome">THD Tensão:</span>
-                        <span class="param-valor" id="thdF2">-- %</span>
-                    </div>
-                    
-                    <div class="parametro">
-                        <span class="param-nome">THD Corrente:</span>
-                        <span class="param-valor" id="thdCorrenteF2">-- %</span>
+                    <div class="phase-params">
+                        <div class="param-row">
+                            <span class="param-name">📊 Tensão</span>
+                            <span class="param-value" id="tensaoF2">-- V</span>
+                        </div>
+                        <div class="param-row">
+                            <span class="param-name">⚡ Corrente</span>
+                            <span class="param-value" id="correnteF2">-- A</span>
+                        </div>
+                        <div class="param-row">
+                            <span class="param-name">💡 Potência Ativa</span>
+                            <span class="param-value" id="potenciaF2">-- W</span>
+                        </div>
+                        <div class="param-row">
+                            <span class="param-name">🔄 Potência Reativa</span>
+                            <span class="param-value" id="reativaF2">-- Var</span>
+                        </div>
+                        <div class="param-row">
+                            <span class="param-name">📈 Potência Aparente</span>
+                            <span class="param-value" id="aparenteF2">-- VA</span>
+                        </div>
+                        <div class="param-row">
+                            <span class="param-name">🎯 Fator de Potência</span>
+                            <span class="param-value" id="fpF2">--</span>
+                        </div>
+                        <div class="param-row">
+                            <span class="param-name">⚠️ THD Tensão</span>
+                            <span class="param-value" id="thdF2">-- %</span>
+                        </div>
+                        <div class="param-row">
+                            <span class="param-name">⚡ THD Corrente</span>
+                            <span class="param-value" id="thdCorrenteF2">-- %</span>
+                        </div>
                     </div>
                 </div>
                 
                 <!-- FASE 3 -->
-                <div class="fase-card fase-3">
-                    <div class="fase-titulo">🟡 FASE 3</div>
-                    
-                    <div class="parametro">
-                        <span class="param-nome">Tensão:</span>
-                        <span class="param-valor" id="tensaoF3">-- V</span>
+                <div class="phase-card phase-3 fade-in">
+                    <div class="phase-header">
+                        <div class="phase-title">
+                            🟡 Fase 3
+                        </div>
+                        <div class="phase-badge badge-3">TERCIÁRIA</div>
                     </div>
-                    
-                    <div class="parametro">
-                        <span class="param-nome">Corrente:</span>
-                        <span class="param-valor" id="correnteF3">-- A</span>
-                    </div>
-                    
-                    <div class="parametro">
-                        <span class="param-nome">Potência Ativa:</span>
-                        <span class="param-valor" id="potenciaF3">-- W</span>
-                    </div>
-                    
-                    <div class="parametro">
-                        <span class="param-nome">Potência Reativa:</span>
-                        <span class="param-valor" id="reativaF3">-- Var</span>
-                    </div>
-                    
-                    <div class="parametro">
-                        <span class="param-nome">Fator de Potência:</span>
-                        <span class="param-valor" id="fpF3">--</span>
-                    </div>
-                    
-                    <div class="parametro">
-                        <span class="param-nome">THD Tensão:</span>
-                        <span class="param-valor" id="thdF3">-- %</span>
-                    </div>
-                    
-                    <div class="parametro">
-                        <span class="param-nome">THD Corrente:</span>
-                        <span class="param-valor" id="thdCorrenteF3">-- %</span>
+                    <div class="phase-params">
+                        <div class="param-row">
+                            <span class="param-name">📊 Tensão</span>
+                            <span class="param-value" id="tensaoF3">-- V</span>
+                        </div>
+                        <div class="param-row">
+                            <span class="param-name">⚡ Corrente</span>
+                            <span class="param-value" id="correnteF3">-- A</span>
+                        </div>
+                        <div class="param-row">
+                            <span class="param-name">💡 Potência Ativa</span>
+                            <span class="param-value" id="potenciaF3">-- W</span>
+                        </div>
+                        <div class="param-row">
+                            <span class="param-name">🔄 Potência Reativa</span>
+                            <span class="param-value" id="reativaF3">-- Var</span>
+                        </div>
+                        <div class="param-row">
+                            <span class="param-name">📈 Potência Aparente</span>
+                            <span class="param-value" id="aparenteF3">-- VA</span>
+                        </div>
+                        <div class="param-row">
+                            <span class="param-name">🎯 Fator de Potência</span>
+                            <span class="param-value" id="fpF3">--</span>
+                        </div>
+                        <div class="param-row">
+                            <span class="param-name">⚠️ THD Tensão</span>
+                            <span class="param-value" id="thdF3">-- %</span>
+                        </div>
+                        <div class="param-row">
+                            <span class="param-name">⚡ THD Corrente</span>
+                            <span class="param-value" id="thdCorrenteF3">-- %</span>
+                        </div>
                     </div>
                 </div>
             </div>
             
-            <div class="atualizacao" id="tempoAtualizacao">
-                Atualizado em: --
+            <!-- GRÁFICOS -->
+            <h2 class="section-title fade-in">📈 VISUALIZAÇÃO GRÁFICA</h2>
+            <div class="section-subtitle fade-in">
+                Análise temporal e comparativa dos principais parâmetros elétricos
+            </div>
+            
+            <div class="charts-grid">
+                <div class="chart-container fade-in">
+                    <div class="chart-title">Tensão por Fase (V)</div>
+                    <canvas id="tensaoChart"></canvas>
+                </div>
+                <div class="chart-container fade-in">
+                    <div class="chart-title">THD por Fase (%)</div>
+                    <canvas id="thdChart"></canvas>
+                </div>
+            </div>
+            
+            <!-- FOOTER -->
+            <div class="footer fade-in">
+                <div>🏛️ Universidade Federal do Rio de Janeiro - UFRJ</div>
+                <div>🔬 Laboratório de Medições Elétricas - Departamento de Engenharia Elétrica</div>
+                <div class="update-time" id="tempoAtualizacao">
+                    ⏰ Sistema inicializado - Aguardando dados...
+                </div>
             </div>
         </div>
 
         <script>
+            let tensaoChart, thdChart;
+            let startTime = new Date();
+            
             // Formatar números
             function formatarNumero(valor, decimais = 2) {
                 if (valor == null || isNaN(valor)) return '--';
-                return valor.toFixed(decimais);
+                return parseFloat(valor).toFixed(decimais);
+            }
+            
+            // Atualizar tempo de operação
+            function atualizarTempoOperacao() {
+                const agora = new Date();
+                const diff = agora - startTime;
+                const horas = Math.floor(diff / 3600000);
+                const minutos = Math.floor((diff % 3600000) / 60000);
+                const segundos = Math.floor((diff % 60000) / 1000);
+                
+                document.getElementById('tempoOperacao').textContent = 
+                    `${horas.toString().padStart(2, '0')}:${minutos.toString().padStart(2, '0')}:${segundos.toString().padStart(2, '0')}`;
             }
             
             // Atualizar display com dados
             function atualizarDisplay(dados) {
-                console.log('Atualizando display com:', dados);
+                console.log('🎯 Dashboard Premium - Atualizando dados:', dados);
                 
                 // Cards principais
                 document.getElementById('tensaoTrifasica').textContent = formatarNumero(dados.Tensao_Trifasica);
                 document.getElementById('correnteTrifasica').textContent = formatarNumero(dados.Corrente_Trifasica);
                 document.getElementById('potenciaAtiva').textContent = formatarNumero(dados.Potencia_Ativa_Trifasica);
                 document.getElementById('frequencia').textContent = formatarNumero(dados.Frequencia);
+                document.getElementById('demandaAtiva').textContent = formatarNumero(dados.Demanda_Ativa);
                 document.getElementById('thdTensaoF1').textContent = formatarNumero(dados.THD_Tensao_Fase_1);
                 
                 // Fase 1
@@ -534,6 +876,7 @@ app.get('/', (req, res) => {
                 document.getElementById('correnteF1').textContent = formatarNumero(dados.Corrente_Fase_1) + ' A';
                 document.getElementById('potenciaF1').textContent = formatarNumero(dados.Potencia_Ativa_Fase_1) + ' W';
                 document.getElementById('reativaF1').textContent = formatarNumero(dados.Potencia_Reativa_Fase_1) + ' Var';
+                document.getElementById('aparenteF1').textContent = formatarNumero(dados.Potencia_Aparente_Fase_1) + ' VA';
                 document.getElementById('fpF1').textContent = formatarNumero(dados.Fator_Potencia_Fase_1);
                 document.getElementById('thdF1').textContent = formatarNumero(dados.THD_Tensao_Fase_1) + ' %';
                 document.getElementById('thdCorrenteF1').textContent = formatarNumero(dados.THD_Corrente_Fase_1) + ' %';
@@ -543,6 +886,7 @@ app.get('/', (req, res) => {
                 document.getElementById('correnteF2').textContent = formatarNumero(dados.Corrente_Fase_2) + ' A';
                 document.getElementById('potenciaF2').textContent = formatarNumero(dados.Potencia_Ativa_Fase_2) + ' W';
                 document.getElementById('reativaF2').textContent = formatarNumero(dados.Potencia_Reativa_Fase_2) + ' Var';
+                document.getElementById('aparenteF2').textContent = formatarNumero(dados.Potencia_Aparente_Fase_2) + ' VA';
                 document.getElementById('fpF2').textContent = formatarNumero(dados.Fator_Potencia_Fase_2);
                 document.getElementById('thdF2').textContent = formatarNumero(dados.THD_Tensao_Fase_2) + ' %';
                 document.getElementById('thdCorrenteF2').textContent = formatarNumero(dados.THD_Corrente_Fase_2) + ' %';
@@ -552,6 +896,7 @@ app.get('/', (req, res) => {
                 document.getElementById('correnteF3').textContent = formatarNumero(dados.Corrente_Fase_3) + ' A';
                 document.getElementById('potenciaF3').textContent = formatarNumero(dados.Potencia_Ativa_Fase_3) + ' W';
                 document.getElementById('reativaF3').textContent = formatarNumero(dados.Potencia_Reativa_Fase_3) + ' Var';
+                document.getElementById('aparenteF3').textContent = formatarNumero(dados.Potencia_Aparente_Fase_3) + ' VA';
                 document.getElementById('fpF3').textContent = formatarNumero(dados.Fator_Potencia_Fase_3);
                 document.getElementById('thdF3').textContent = formatarNumero(dados.THD_Tensao_Fase_3) + ' %';
                 document.getElementById('thdCorrenteF3').textContent = formatarNumero(dados.THD_Corrente_Fase_3) + ' %';
@@ -559,7 +904,138 @@ app.get('/', (req, res) => {
                 // Atualizar timestamp
                 const agora = new Date();
                 document.getElementById('ultimaAtualizacao').textContent = agora.toLocaleTimeString();
-                document.getElementById('tempoAtualizacao').textContent = 'Atualizado em: ' + agora.toLocaleString();
+                document.getElementById('tempoAtualizacao').textContent = 
+                    '⏰ Última atualização: ' + agora.toLocaleString() + ' | Sistema operando normalmente';
+                
+                // Atualizar gráficos
+                atualizarGraficos(dados);
+            }
+            
+            // Atualizar gráficos
+            function atualizarGraficos(dados) {
+                const coresFases = ['#e74c3c', '#2ecc71', '#f39c12'];
+                
+                // Gráfico de Tensão
+                if (tensaoChart) {
+                    tensaoChart.data.datasets[0].data = [
+                        dados.Tensao_Fase_1 || 0,
+                        dados.Tensao_Fase_2 || 0,
+                        dados.Tensao_Fase_3 || 0
+                    ];
+                    tensaoChart.update('none');
+                } else {
+                    const ctx1 = document.getElementById('tensaoChart').getContext('2d');
+                    tensaoChart = new Chart(ctx1, {
+                        type: 'bar',
+                        data: {
+                            labels: ['Fase 1', 'Fase 2', 'Fase 3'],
+                            datasets: [{
+                                label: 'Tensão (V)',
+                                data: [
+                                    dados.Tensao_Fase_1 || 0,
+                                    dados.Tensao_Fase_2 || 0,
+                                    dados.Tensao_Fase_3 || 0
+                                ],
+                                backgroundColor: coresFases,
+                                borderColor: coresFases.map(cor => cor.replace('0.8', '1')),
+                                borderWidth: 2,
+                                borderRadius: 8
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            plugins: {
+                                legend: {
+                                    display: false
+                                },
+                                tooltip: {
+                                    backgroundColor: 'rgba(0,0,0,0.8)',
+                                    titleFont: { size: 14 },
+                                    bodyFont: { size: 13 }
+                                }
+                            },
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    grid: {
+                                        color: 'rgba(0,0,0,0.1)'
+                                    },
+                                    ticks: {
+                                        font: { size: 12 }
+                                    }
+                                },
+                                x: {
+                                    grid: {
+                                        display: false
+                                    },
+                                    ticks: {
+                                        font: { size: 12, weight: 'bold' }
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+                
+                // Gráfico de THD
+                if (thdChart) {
+                    thdChart.data.datasets[0].data = [
+                        dados.THD_Tensao_Fase_1 || 0,
+                        dados.THD_Tensao_Fase_2 || 0,
+                        dados.THD_Tensao_Fase_3 || 0
+                    ];
+                    thdChart.update('none');
+                } else {
+                    const ctx2 = document.getElementById('thdChart').getContext('2d');
+                    thdChart = new Chart(ctx2, {
+                        type: 'bar',
+                        data: {
+                            labels: ['Fase 1', 'Fase 2', 'Fase 3'],
+                            datasets: [{
+                                label: 'THD Tensão (%)',
+                                data: [
+                                    dados.THD_Tensao_Fase_1 || 0,
+                                    dados.THD_Tensao_Fase_2 || 0,
+                                    dados.THD_Tensao_Fase_3 || 0
+                                ],
+                                backgroundColor: coresFases,
+                                borderColor: coresFases.map(cor => cor.replace('0.8', '1')),
+                                borderWidth: 2,
+                                borderRadius: 8
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            plugins: {
+                                legend: {
+                                    display: false
+                                },
+                                tooltip: {
+                                    backgroundColor: 'rgba(0,0,0,0.8)'
+                                }
+                            },
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    grid: {
+                                        color: 'rgba(0,0,0,0.1)'
+                                    },
+                                    ticks: {
+                                        font: { size: 12 }
+                                    }
+                                },
+                                x: {
+                                    grid: {
+                                        display: false
+                                    },
+                                    ticks: {
+                                        font: { size: 12, weight: 'bold' }
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
             }
             
             // Buscar dados
@@ -572,32 +1048,143 @@ app.get('/', (req, res) => {
                         document.getElementById('totalLeituras').textContent = resultado.totalReadings;
                         atualizarDisplay(resultado.latest);
                         document.getElementById('statusDispositivo').textContent = '🟢 Online';
+                        document.getElementById('statusDispositivo').className = 'status-value pulse';
                     } else {
                         document.getElementById('statusDispositivo').textContent = '🟡 Aguardando dados';
+                        document.getElementById('statusDispositivo').className = 'status-value';
                     }
                 } catch (erro) {
                     console.error('Erro buscando dados:', erro);
                     document.getElementById('statusDispositivo').textContent = '🔴 Erro conexão';
+                    document.getElementById('statusDispositivo').className = 'status-value';
                 }
             }
             
             // Atualizar dados
             function atualizarDados() {
                 buscarDados();
-                alert('Dados atualizados!');
+                mostrarNotificacao('🔄 Dados atualizados com sucesso!', 'success');
             }
             
             // Exportar dados
             async function exportarDados() {
-                alert('Exportação em desenvolvimento...');
+                try {
+                    const response = await fetch('/api/history?limit=1000');
+                    const data = await response.json();
+                    
+                    if (data.length === 0) {
+                        mostrarNotificacao('❌ Nenhum dado para exportar!', 'error');
+                        return;
+                    }
+                    
+                    const headers = ['Timestamp', 'Tensão Trifásica (V)', 'Corrente Trifásica (A)', 'Potência Ativa (W)', 
+                                   'Frequência (Hz)', 'Demanda Ativa (W)', 'Tensão F1 (V)', 'Tensão F2 (V)', 'Tensão F3 (V)',
+                                   'THD F1 (%)', 'THD F2 (%)', 'THD F3 (%)'];
+                    
+                    const csvContent = [
+                        headers.join(','),
+                        ...data.map(row => [
+                            `"${row.timestamp}"`,
+                            row.Tensao_Trifasica || '',
+                            row.Corrente_Trifasica || '',
+                            row.Potencia_Ativa_Trifasica || '',
+                            row.Frequencia || '',
+                            row.Demanda_Ativa || '',
+                            row.Tensao_Fase_1 || '',
+                            row.Tensao_Fase_2 || '',
+                            row.Tensao_Fase_3 || '',
+                            row.THD_Tensao_Fase_1 || '',
+                            row.THD_Tensao_Fase_2 || '',
+                            row.THD_Tensao_Fase_3 || ''
+                        ].join(','))
+                    ].join('\\n');
+                    
+                    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                    const link = document.createElement('a');
+                    const url = URL.createObjectURL(blob);
+                    link.setAttribute('href', url);
+                    link.setAttribute('download', `relatorio_ufrj_${new Date().toISOString().split('T')[0]}.csv`);
+                    link.style.visibility = 'hidden';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    
+                    mostrarNotificacao('📊 Relatório exportado com sucesso!', 'success');
+                } catch (error) {
+                    console.error('Erro exportando dados:', error);
+                    mostrarNotificacao('❌ Erro ao exportar dados!', 'error');
+                }
             }
             
-            // Inicializar
+            // Capturar dashboard
+            function capturarDashboard() {
+                html2canvas(document.body).then(canvas => {
+                    const link = document.createElement('a');
+                    link.download = `dashboard_ufrj_${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
+                    link.href = canvas.toDataURL();
+                    link.click();
+                    mostrarNotificacao('📷 Captura de tela salva!', 'success');
+                });
+            }
+            
+            // Mostrar notificação
+            function mostrarNotificacao(mensagem, tipo) {
+                // Criar elemento de notificação
+                const notification = document.createElement('div');
+                notification.textContent = mensagem;
+                notification.style.cssText = `
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    background: ${tipo === 'success' ? '#27ae60' : '#e74c3c'};
+                    color: white;
+                    padding: 15px 25px;
+                    border-radius: 10px;
+                    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+                    z-index: 10000;
+                    font-weight: 600;
+                    font-size: 14px;
+                    animation: slideIn 0.3s ease;
+                `;
+                
+                document.body.appendChild(notification);
+                
+                // Remover após 3 segundos
+                setTimeout(() => {
+                    notification.style.animation = 'slideOut 0.3s ease';
+                    setTimeout(() => {
+                        if (document.body.contains(notification)) {
+                            document.body.removeChild(notification);
+                        }
+                    }, 300);
+                }, 3000);
+            }
+            
+            // Inicializar sistema
             document.addEventListener('DOMContentLoaded', function() {
-                console.log('Dashboard COMPLETO carregado - buscando dados...');
+                console.log('🚀 Dashboard UFRJ Premium - Sistema inicializado!');
+                console.log('✅ Análise completa por fases ativada');
+                console.log('📊 Gráficos e visualizações prontos');
+                
                 buscarDados();
-                // Atualizar a cada 5 segundos
-                setInterval(buscarDados, 5000);
+                setInterval(atualizarTempoOperacao, 1000);
+                
+                // Atualizar a cada 3 segundos
+                setInterval(buscarDados, 3000);
+                
+                // Adicionar estilo para animações
+                const style = document.createElement('style');
+                style.textContent = \`
+                    @keyframes slideIn {
+                        from { transform: translateX(100%); opacity: 0; }
+                        to { transform: translateX(0); opacity: 1; }
+                    }
+                    @keyframes slideOut {
+                        from { transform: translateX(0); opacity: 1; }
+                        to { transform: translateX(100%); opacity: 0; }
+                    }
+                \`;
+                document.head.appendChild(style);
             });
         </script>
     </body>
@@ -610,8 +1197,9 @@ app.get('/', (req, res) => {
 // Initialize and start server
 initializeDatabase();
 app.listen(PORT, () => {
-    console.log(`🚀 Servidor Multimedidor UFRJ rodando na porta ${PORT}`);
-    console.log(`📊 Dashboard COMPLETO: http://localhost:${PORT}`);
-    console.log(`✅ Com análise detalhada por fase e THD`);
-    console.log(`🆕 Versão 2.0 - Dashboard Completo`);
+    console.log(`🚀 Servidor Multimedidor UFRJ Premium rodando na porta ${PORT}`);
+    console.log(`🎨 Dashboard Premium: http://localhost:${PORT}`);
+    console.log(`✅ Análise completa por fases e THD`);
+    console.log(`📊 Gráficos interativos ativos`);
+    console.log(`🏛️ Sistema UFRJ - Versão Definitiva`);
 });
